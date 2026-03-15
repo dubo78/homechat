@@ -13,102 +13,70 @@
       --accent-blue: #448aff;
     }
     body { 
-      background-color: var(--bg-color); 
-      color: var(--text-color);
+      background-color: var(--bg-color); color: var(--text-color);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       height: 100vh; margin: 0; padding: 0; overflow: hidden;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
     }
     .container {
-      background: var(--card-bg);
-      text-align: center; width: 100%; height: 100%;
+      background: var(--card-bg); text-align: center; width: 100%; height: 100%;
       display: flex; flex-direction: column; justify-content: center;
       padding: 20px; box-sizing: border-box;
     }
     h2 { margin: 0 0 5px 0; font-weight: 300; letter-spacing: 2px; font-size: 24px; }
     #userCount { font-size: 12px; color: var(--accent-blue); margin-bottom: 30px; font-weight: bold; }
-
     #talkBtn {
       width: 140px; height: 140px; border-radius: 50%; border: none;
-      background: var(--primary-red); color: white;
-      font-size: 20px; font-weight: bold; cursor: pointer;
-      box-shadow: 0 0 25px rgba(255, 82, 82, 0.4);
-      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-      outline: none; margin: 0 auto;
+      background: var(--primary-red); color: white; font-size: 20px; font-weight: bold; 
+      cursor: pointer; box-shadow: 0 0 25px rgba(255, 82, 82, 0.4);
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); outline: none; margin: 0 auto;
     }
-    #talkBtn.active {
-      background: var(--primary-green);
-      box-shadow: 0 0 45px rgba(76, 175, 80, 0.6);
-      transform: scale(1.05);
-    }
-    #talkBtn:active { transform: scale(0.95); }
-
-    #status { 
-      margin-top: 30px; font-size: 14px; padding: 12px; border-radius: 12px;
-      background: rgba(0,0,0,0.3); transition: all 0.3s ease;
-    }
+    #talkBtn.active { background: var(--primary-green); box-shadow: 0 0 45px rgba(76, 175, 80, 0.6); transform: scale(1.05); }
+    #status { margin-top: 30px; font-size: 14px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,0.3); transition: all 0.3s ease; }
     .status-online { color: var(--primary-green); border: 1px solid var(--primary-green); }
     .status-offline { color: #888; border: 1px solid #444; }
-    .hint { font-size: 10px; margin-top: 30px; opacity: 0.3; }
+    .hint { font-size: 10px; margin-top: 30px; opacity: 0.3; text-transform: uppercase; }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>HOME CHAT</h2>
-    <div id="userCount">접속 중인 기기: 0</div>
+    <div id="userCount">CONNECTED DEVICES: 0</div>
     <button id="talkBtn">PUSH</button>
-    <div id="status" class="status-offline">상대방을 찾는 중...</div>
+    <div id="status" class="status-offline">SCANNING...</div>
     <div class="hint">LAN P2P WALKIE-TALKIE</div>
   </div>
   <div id="audioContainer"></div>
-
   <script>
-    const dgram = require('dgram');
-    const os = require('os');
-    const PORT = 50000;
-    const udp = dgram.createSocket('udp4');
-    
-    const myIps = [];
-    const broadcastIps = [];
+    const dgram = require('dgram'); const os = require('os');
+    const PORT = 50000; const udp = dgram.createSocket('udp4');
+    const myIps = []; const broadcastIps = [];
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
           myIps.push(iface.address);
-          const ipParts = iface.address.split('.');
-          const maskParts = iface.netmask.split('.');
+          const ipParts = iface.address.split('.'); const maskParts = iface.netmask.split('.');
           const bcastParts = [];
-          for(let i=0; i<4; i++) {
-            bcastParts.push((parseInt(ipParts[i]) | (~parseInt(maskParts[i]) & 255)));
-          }
+          for(let i=0; i<4; i++) bcastParts.push((parseInt(ipParts[i]) | (~parseInt(maskParts[i]) & 255)));
           broadcastIps.push(bcastParts.join('.'));
         }
       }
     }
     const uniqueBroadcasts = [...new Set(broadcastIps)];
-    
-    let localStream;
-    let isTalking = false;
-    const peers = {};
-
+    let localStream; let isTalking = false; const peers = {};
     const talkBtn = document.getElementById('talkBtn');
     const statusDiv = document.getElementById('status');
     const userCountDiv = document.getElementById('userCount');
     const audioContainer = document.getElementById('audioContainer');
 
-    navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true }
-    }).then(stream => {
-      localStream = stream;
-      localStream.getAudioTracks()[0].enabled = false;
-
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(stream => {
+      localStream = stream; localStream.getAudioTracks()[0].enabled = false;
       talkBtn.addEventListener('click', () => {
-        isTalking = !isTalking;
-        localStream.getAudioTracks()[0].enabled = isTalking;
+        isTalking = !isTalking; localStream.getAudioTracks()[0].enabled = isTalking;
         talkBtn.innerText = isTalking ? "TALKING" : "PUSH";
         talkBtn.classList.toggle('active', isTalking);
       });
-
       udp.bind(PORT, '0.0.0.0', () => {
         udp.setBroadcast(true);
         setInterval(() => {
@@ -119,46 +87,33 @@
     });
 
     function updatePeerStatus() {
-      const activePeers = Object.values(peers).filter(p => 
-        p.pc.iceConnectionState === 'connected' || p.pc.iceConnectionState === 'completed'
-      );
-      const count = activePeers.length;
-      userCountDiv.innerText = `접속 중인 기기: ${count}`;
-      statusDiv.innerText = count > 0 ? "상대방 연결됨" : "상대방 없음 (대기 중)";
-      statusDiv.className = count > 0 ? "status-online" : "status-offline";
+      const activePeers = Object.values(peers).filter(p => p.pc.iceConnectionState === 'connected' || p.pc.iceConnectionState === 'completed');
+      userCountDiv.innerText = `CONNECTED DEVICES: ${activePeers.length}`;
+      statusDiv.innerText = activePeers.length > 0 ? "PEER ONLINE" : "OFFLINE (WAITING)";
+      statusDiv.className = activePeers.length > 0 ? "status-online" : "status-offline";
     }
 
     function sendUdp(msg, ip) {
-      try {
-        const data = Buffer.from(JSON.stringify(msg));
-        udp.send(data, 0, data.length, PORT, ip);
-      } catch (e) {}
+      try { const data = Buffer.from(JSON.stringify(msg)); udp.send(data, 0, data.length, PORT, ip); } catch (e) {}
     }
 
     udp.on('message', async (msg, rinfo) => {
       if (myIps.includes(rinfo.address)) return;
       try {
         const data = JSON.parse(msg.toString());
-        if (!peers[rinfo.address]) {
-          peers[rinfo.address] = { pc: createPeerConnection(rinfo.address) };
-        }
+        if (!peers[rinfo.address]) peers[rinfo.address] = { pc: createPeerConnection(rinfo.address) };
         const pc = peers[rinfo.address].pc;
-
         if (data.type === 'hello') {
-          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'checking') return;
-          if (pc.signalingState !== 'stable') return;
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'checking' || pc.signalingState !== 'stable') return;
+          const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
           sendUdp({ type: 'offer', sdp: offer }, rinfo.address);
         } else if (data.type === 'offer') {
           if (pc.signalingState !== 'stable') return;
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+          const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
           sendUdp({ type: 'answer', sdp: answer }, rinfo.address);
         } else if (data.type === 'answer') {
-          if (pc.signalingState !== 'have-local-offer') return;
-          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          if (pc.signalingState === 'have-local-offer') await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
         } else if (data.type === 'ice') {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
@@ -171,12 +126,11 @@
       pc.onicecandidate = e => { if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip); };
       pc.oniceconnectionstatechange = () => updatePeerStatus();
       pc.ontrack = e => {
-        let audioEl = document.getElementById(`audio-${ip.replace(/\./g, '-')}`);
+        let audioId = `audio-${ip.replace(/\./g, '-')}`;
+        let audioEl = document.getElementById(audioId);
         if (!audioEl) {
-          audioEl = document.createElement('audio');
-          audioEl.id = `audio-${ip.replace(/\./g, '-')}`;
-          audioEl.autoplay = true;
-          audioContainer.appendChild(audioEl);
+          audioEl = document.createElement('audio'); audioEl.id = audioId;
+          audioEl.autoplay = true; audioContainer.appendChild(audioEl);
         }
         audioEl.srcObject = e.streams[0];
       };

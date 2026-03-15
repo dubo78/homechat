@@ -21,7 +21,6 @@
     
     const PORT = 50000;
     const udp = dgram.createSocket('udp4');
-    // 내 로컬 IP 목록 (자신이 보낸 신호 무시용)
     const myIps = Object.values(os.networkInterfaces()).flat().map(i => i.address);
     
     let localStream;
@@ -32,16 +31,15 @@
     const statusDiv = document.getElementById('status');
     const remoteAudio = document.getElementById('remoteAudio');
 
-    // 1. 마이크 제어 및 토글 상태창 구현
     navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true } // 하울링 방지 켬
+      audio: { echoCancellation: true, noiseSuppression: true }
     }).then(stream => {
       localStream = stream;
-      localStream.getAudioTracks()[0].enabled = false; // 처음엔 마이크 끄기
+      localStream.getAudioTracks()[0].enabled = false;
 
       talkBtn.addEventListener('click', () => {
         isTalking = !isTalking;
-        localStream.getAudioTracks()[0].enabled = isTalking; // 여기서 마이크 ON/OFF 제어
+        localStream.getAudioTracks()[0].enabled = isTalking;
 
         if (isTalking) {
           talkBtn.innerText = "말하기 끄기";
@@ -54,26 +52,28 @@
         }
       });
 
-      // 2. 마이크 준비 후 LAN 자동 탐색 및 연결 시작
-      udp.bind(PORT, () => {
+      // 0.0.0.0으로 모든 IP 수신 허용
+      udp.bind(PORT, '0.0.0.0', () => {
         udp.setBroadcast(true);
-        sendUdp({ type: 'hello' }, '255.255.255.255'); // 네트워크 전체에 접속 알림
+        // 3초마다 계속 탐색 신호 보내기
+        setInterval(() => {
+          sendUdp({ type: 'hello' }, '255.255.255.255');
+        }, 3000);
       });
-    });
+    }).catch(err => console.error("마이크 접근 오류:", err));
 
-    // UDP 메시지 전송 함수
     function sendUdp(msg, ip) {
       const data = Buffer.from(JSON.stringify(msg));
       udp.send(data, 0, data.length, PORT, ip);
     }
 
-    // 서버 없이 P2P 신호 교환 (WebRTC Signaling)
     udp.on('message', async (msg, rinfo) => {
-      if (myIps.includes(rinfo.address)) return; // 내가 보낸 건 무시
+      if (myIps.includes(rinfo.address)) return;
 
       try {
         const data = JSON.parse(msg.toString());
-		console.log("신호 받음:", data.type, "from", rinfo.address); // <- 이 줄을 추가!
+        // 통신 로그 확인
+        console.log("신호 받음:", data.type, "from", rinfo.address);
         
         if (!peers[rinfo.address]) {
           peers[rinfo.address] = createPeerConnection(rinfo.address);
@@ -97,7 +97,6 @@
       } catch (e) { console.error(e); }
     });
 
-    // P2P 오디오 연결 생성
     function createPeerConnection(ip) {
       const pc = new RTCPeerConnection({ iceServers: [] }); 
       
@@ -110,7 +109,6 @@
       };
 
       pc.ontrack = e => {
-        // 상대방 소리가 들어오면 스피커로 출력
         if (!remoteAudio.srcObject) remoteAudio.srcObject = e.streams[0];
       };
       

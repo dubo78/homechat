@@ -22,6 +22,7 @@
     const os = require('os');
     
     const PORT = 50000;
+    const MULTICAST_IP = '224.0.0.114'; // 멀티캐스트 주소 추가
     const udp = dgram.createSocket('udp4');
     const myIps = Object.values(os.networkInterfaces()).flat().map(i => i.address);
     console.log("내 IP 목록:", myIps);
@@ -59,12 +60,14 @@
 
       console.log("4. UDP 포트 바인딩 시도...");
       udp.bind(PORT, '0.0.0.0', () => {
-        console.log("5. UDP 바인딩 성공, 브로드캐스트 설정 중...");
+        console.log("5. UDP 바인딩 성공, 멀티캐스트 설정 중...");
         udp.setBroadcast(true);
+        udp.setMulticastTTL(128);
+        udp.addMembership(MULTICAST_IP); // 멀티캐스트 그룹 가입
         
         setInterval(() => {
           console.log("6. 탐색 신호(hello) 전송 시도");
-          sendUdp({ type: 'hello' }, '255.255.255.255');
+          sendUdp({ type: 'hello' }, MULTICAST_IP); // 멀티캐스트 주소로 전송
         }, 3000);
       });
     }).catch(err => console.error("마이크 접근 오류:", err));

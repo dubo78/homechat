@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>HomeChat</title>
+  <style>
+    body { text-align: center; padding: 40px; font-family: sans-serif; }
+    #status { font-weight: bold; color: red; margin: 20px; font-size: 18px; }
+    button { padding: 15px 30px; font-size: 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>HomeChat</h2>
+  <button id="talkBtn">말하기 켜기</button>
+  <div id="status">상태: 대기 중 (마이크 꺼짐)</div>
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    console.log("1. 앱 스크립트 실행 시작");
+    
+    const dgram = require('dgram');
+    const os = require('os');
+    
+    const PORT = 50000;
+    const udp = dgram.createSocket('udp4');
+    
+    const myIps = [];
+    const broadcastIps = [];
+    
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          myIps.push(iface.address);
+          const ipParts = iface.address.split('.');
+          const maskParts = iface.netmask.split('.');
+          const bcastParts = [];
+          for(let i=0; i<4; i++) {
+            bcastParts.push((parseInt(ipParts[i]) | (~parseInt(maskParts[i]) & 255)));
+          }
+          broadcastIps.push(bcastParts.join('.'));
+        }
+      }
+    }
+    
+    const uniqueBroadcasts = [...new Set(broadcastIps)];
+    
+    let localStream;
+    let isTalking = false;
+    const peers = {};
+
+    const talkBtn = document.getElementById('talkBtn');
+    const statusDiv = document.getElementById('status');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true }
+    }).then(stream => {
+      localStream = stream;
+      localStream.getAudioTracks()[0].enabled = false;
+
+      talkBtn.addEventListener('click', () => {
+        isTalking = !isTalking;
+        localStream.getAudioTracks()[0].enabled = isTalking;
+
+        if (isTalking) {
+          talkBtn.innerText = "말하기 끄기";
+          statusDiv.style.color = "green";
+          statusDiv.innerText = "상태: 송신 중 (마이크 켜짐)";
+        } else {
+          talkBtn.innerText = "말하기 켜기";
+          statusDiv.style.color = "red";
+          statusDiv.innerText = "상태: 대기 중 (마이크 꺼짐)";
+        }
+      });
+
+      udp.bind(PORT, '0.0.0.0', () => {
+        udp.setBroadcast(true);
+        
+        setInterval(() => {
+          uniqueBroadcasts.forEach(bcastIp => {
+            sendUdp({ type: 'hello' }, bcastIp);
+          });
+        }, 3000);
+      });
+    }).catch(err => console.error("마이크 접근 오류:", err));
+
+    function sendUdp(msg, ip) {
+      try {
+        const data = Buffer.from(JSON.stringify(msg));
+        udp.send(data, 0, data.length, PORT, ip);
+      } catch (e) {}
+    }
+
+    udp.on('message', async (msg, rinfo) => {
+      if (myIps.includes(rinfo.address)) return;
+
+      try {
+        const data = JSON.parse(msg.toString());
+        
+        if (!peers[rinfo.address]) {
+          peers[rinfo.address] = createPeerConnection(rinfo.address);
+        }
+        const pc = peers[rinfo.address];
+
+        if (data.type === 'hello') {
+          // 핵심 수정: 이미 연결되었거나 연결 중이면 3초마다 오는 hello 신호를 무시
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'checking') return;
+          if (pc.signalingState !== 'stable') return;
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendUdp({ type: 'offer', sdp: offer }, rinfo.address);
+        } else if (data.type === 'offer') {
+          if (pc.signalingState !== 'stable') return; // 중복 방지
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendUdp({ type: 'answer', sdp: answer }, rinfo.address);
+        } else if (data.type === 'answer') {
+          if (pc.signalingState !== 'have-local-offer') return; // 중복 방지
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        } else if (data.type === 'ice') {
+          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+      } catch (e) {}
+    });
+
+    function createPeerConnection(ip) {
+      const pc = new RTCPeerConnection({ 
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
+      }); 
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      }
+
+      pc.onicecandidate = e => {
+        if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("P2P 실제 연결 상태:", pc.iceConnectionState);
+      };
+
+      pc.ontrack = e => {
+        console.log("상대방 오디오 트랙 수신됨");
+        if (!remoteAudio.srcObject) {
+          remoteAudio.srcObject = e.streams[0];
+        }
+        
+        remoteAudio.play().catch(err => {}); // 불필요한 에러 로그 생략
+      };
+      
+      return pc;
+    }
+  </script>
+</body>
+</html>

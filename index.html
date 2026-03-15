@@ -4,29 +4,72 @@
   <meta charset="UTF-8">
   <title>HomeChat</title>
   <style>
-    body { text-align: center; padding: 40px; font-family: sans-serif; }
-    #status { font-weight: bold; color: red; margin: 20px; font-size: 18px; }
-    button { padding: 15px 30px; font-size: 20px; cursor: pointer; }
+    :root {
+      --bg-color: #1a1a1a;
+      --card-bg: #2d2d2d;
+      --text-color: #e0e0e0;
+      --primary-red: #ff5252;
+      --primary-green: #4caf50;
+      --accent-blue: #448aff;
+    }
+    body { 
+      background-color: var(--bg-color); 
+      color: var(--text-color);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; margin: 0; padding: 0; overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .container {
+      background: var(--card-bg);
+      text-align: center; width: 100%; height: 100%;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 20px; box-sizing: border-box;
+    }
+    h2 { margin: 0 0 5px 0; font-weight: 300; letter-spacing: 2px; font-size: 24px; }
+    #userCount { font-size: 12px; color: var(--accent-blue); margin-bottom: 30px; font-weight: bold; }
+
+    #talkBtn {
+      width: 140px; height: 140px; border-radius: 50%; border: none;
+      background: var(--primary-red); color: white;
+      font-size: 20px; font-weight: bold; cursor: pointer;
+      box-shadow: 0 0 25px rgba(255, 82, 82, 0.4);
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      outline: none; margin: 0 auto;
+    }
+    #talkBtn.active {
+      background: var(--primary-green);
+      box-shadow: 0 0 45px rgba(76, 175, 80, 0.6);
+      transform: scale(1.05);
+    }
+    #talkBtn:active { transform: scale(0.95); }
+
+    #status { 
+      margin-top: 30px; font-size: 14px; padding: 12px; border-radius: 12px;
+      background: rgba(0,0,0,0.3); transition: all 0.3s ease;
+    }
+    .status-online { color: var(--primary-green); border: 1px solid var(--primary-green); }
+    .status-offline { color: #888; border: 1px solid #444; }
+    .hint { font-size: 10px; margin-top: 30px; opacity: 0.3; }
   </style>
 </head>
 <body>
-  <h2>HomeChat</h2>
-  <button id="talkBtn">말하기 켜기</button>
-  <div id="status">상태: 대기 중 (마이크 꺼짐)</div>
-  <audio id="remoteAudio" autoplay></audio>
+  <div class="container">
+    <h2>HOME CHAT</h2>
+    <div id="userCount">접속 중인 기기: 0</div>
+    <button id="talkBtn">PUSH</button>
+    <div id="status" class="status-offline">상대방을 찾는 중...</div>
+    <div class="hint">LAN P2P WALKIE-TALKIE</div>
+  </div>
+  <div id="audioContainer"></div>
 
   <script>
-    console.log("1. 앱 스크립트 실행 시작");
-    
     const dgram = require('dgram');
     const os = require('os');
-    
     const PORT = 50000;
     const udp = dgram.createSocket('udp4');
     
     const myIps = [];
     const broadcastIps = [];
-    
     const interfaces = os.networkInterfaces();
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
@@ -42,7 +85,6 @@
         }
       }
     }
-    
     const uniqueBroadcasts = [...new Set(broadcastIps)];
     
     let localStream;
@@ -51,7 +93,8 @@
 
     const talkBtn = document.getElementById('talkBtn');
     const statusDiv = document.getElementById('status');
-    const remoteAudio = document.getElementById('remoteAudio');
+    const userCountDiv = document.getElementById('userCount');
+    const audioContainer = document.getElementById('audioContainer');
 
     navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true }
@@ -62,28 +105,28 @@
       talkBtn.addEventListener('click', () => {
         isTalking = !isTalking;
         localStream.getAudioTracks()[0].enabled = isTalking;
-
-        if (isTalking) {
-          talkBtn.innerText = "말하기 끄기";
-          statusDiv.style.color = "green";
-          statusDiv.innerText = "상태: 송신 중 (마이크 켜짐)";
-        } else {
-          talkBtn.innerText = "말하기 켜기";
-          statusDiv.style.color = "red";
-          statusDiv.innerText = "상태: 대기 중 (마이크 꺼짐)";
-        }
+        talkBtn.innerText = isTalking ? "TALKING" : "PUSH";
+        talkBtn.classList.toggle('active', isTalking);
       });
 
       udp.bind(PORT, '0.0.0.0', () => {
         udp.setBroadcast(true);
-        
         setInterval(() => {
-          uniqueBroadcasts.forEach(bcastIp => {
-            sendUdp({ type: 'hello' }, bcastIp);
-          });
+          uniqueBroadcasts.forEach(bcastIp => sendUdp({ type: 'hello' }, bcastIp));
+          updatePeerStatus();
         }, 3000);
       });
-    }).catch(err => console.error("마이크 접근 오류:", err));
+    });
+
+    function updatePeerStatus() {
+      const activePeers = Object.values(peers).filter(p => 
+        p.pc.iceConnectionState === 'connected' || p.pc.iceConnectionState === 'completed'
+      );
+      const count = activePeers.length;
+      userCountDiv.innerText = `접속 중인 기기: ${count}`;
+      statusDiv.innerText = count > 0 ? "상대방 연결됨" : "상대방 없음 (대기 중)";
+      statusDiv.className = count > 0 ? "status-online" : "status-offline";
+    }
 
     function sendUdp(msg, ip) {
       try {
@@ -94,31 +137,27 @@
 
     udp.on('message', async (msg, rinfo) => {
       if (myIps.includes(rinfo.address)) return;
-
       try {
         const data = JSON.parse(msg.toString());
-        
         if (!peers[rinfo.address]) {
-          peers[rinfo.address] = createPeerConnection(rinfo.address);
+          peers[rinfo.address] = { pc: createPeerConnection(rinfo.address) };
         }
-        const pc = peers[rinfo.address];
+        const pc = peers[rinfo.address].pc;
 
         if (data.type === 'hello') {
-          // 핵심 수정: 이미 연결되었거나 연결 중이면 3초마다 오는 hello 신호를 무시
           if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'checking') return;
           if (pc.signalingState !== 'stable') return;
-
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           sendUdp({ type: 'offer', sdp: offer }, rinfo.address);
         } else if (data.type === 'offer') {
-          if (pc.signalingState !== 'stable') return; // 중복 방지
+          if (pc.signalingState !== 'stable') return;
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           sendUdp({ type: 'answer', sdp: answer }, rinfo.address);
         } else if (data.type === 'answer') {
-          if (pc.signalingState !== 'have-local-offer') return; // 중복 방지
+          if (pc.signalingState !== 'have-local-offer') return;
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
         } else if (data.type === 'ice') {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -127,31 +166,20 @@
     });
 
     function createPeerConnection(ip) {
-      const pc = new RTCPeerConnection({ 
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
-      }); 
-      
-      if (localStream) {
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-      }
-
-      pc.onicecandidate = e => {
-        if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip);
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log("P2P 실제 연결 상태:", pc.iceConnectionState);
-      };
-
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); 
+      if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      pc.onicecandidate = e => { if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip); };
+      pc.oniceconnectionstatechange = () => updatePeerStatus();
       pc.ontrack = e => {
-        console.log("상대방 오디오 트랙 수신됨");
-        if (!remoteAudio.srcObject) {
-          remoteAudio.srcObject = e.streams[0];
+        let audioEl = document.getElementById(`audio-${ip.replace(/\./g, '-')}`);
+        if (!audioEl) {
+          audioEl = document.createElement('audio');
+          audioEl.id = `audio-${ip.replace(/\./g, '-')}`;
+          audioEl.autoplay = true;
+          audioContainer.appendChild(audioEl);
         }
-        
-        remoteAudio.play().catch(err => {}); // 불필요한 에러 로그 생략
+        audioEl.srcObject = e.streams[0];
       };
-      
       return pc;
     }
   </script>

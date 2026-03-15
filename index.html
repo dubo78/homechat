@@ -34,7 +34,7 @@
     #status { margin-top: 20px; font-size: 13px; padding: 10px; border-radius: 12px; background: rgba(0,0,0,0.3); }
     .status-online { color: var(--primary-green); border: 1px solid var(--primary-green); }
     .status-offline { color: #888; border: 1px solid #444; }
-    .hint { font-size: 10px; margin-top: 20px; opacity: 0.3; text-transform: uppercase; }
+    .hint { font-size: 10px; margin-top: 20px; opacity: 0.3; }
   </style>
 </head>
 <body>
@@ -42,12 +42,10 @@
     <h2>HOME CHAT</h2>
     <div id="userCount">CONNECTED DEVICES: 0</div>
     <button id="talkBtn">PUSH</button>
-    
     <div class="vol-control">
       <label>RECEIVE VOLUME</label>
-      <input type="range" id="volSlider" min="0" max="2" step="0.1" value="1.5">
+      <input type="range" id="volSlider" min="0" max="1" step="0.05" value="1">
     </div>
-
     <div id="status" class="status-offline">SCANNING...</div>
     <div class="hint">LAN P2P WALKIE-TALKIE</div>
   </div>
@@ -58,7 +56,6 @@
     const PORT = 50000; const udp = dgram.createSocket('udp4');
     const myIps = []; const broadcastIps = [];
     const interfaces = os.networkInterfaces();
-
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
@@ -73,31 +70,24 @@
     const uniqueBroadcasts = [...new Set(broadcastIps)];
     
     let localStream; let isTalking = false; const peers = {};
-    let audioContext; let gainNode;
-
     const talkBtn = document.getElementById('talkBtn');
     const statusDiv = document.getElementById('status');
     const userCountDiv = document.getElementById('userCount');
     const volSlider = document.getElementById('volSlider');
     const audioContainer = document.getElementById('audioContainer');
 
+    // 마이크 옵션을 강화하여 기본 감도를 높임
     navigator.mediaDevices.getUserMedia({ 
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+      audio: { 
+        echoCancellation: true, 
+        noiseSuppression: true, 
+        autoGainControl: true // 브라우저가 자동으로 마이크 소리를 키우도록 설정
+      } 
     }).then(stream => {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioContext.createMediaStreamSource(stream);
-      gainNode = audioContext.createGain();
-      gainNode.gain.value = 2.5; // 송신 마이크 2.5배 증폭
-      
-      const destination = audioContext.createMediaStreamDestination();
-      source.connect(gainNode);
-      gainNode.connect(destination);
-
-      localStream = destination.stream;
+      localStream = stream;
       localStream.getAudioTracks()[0].enabled = false;
 
       talkBtn.addEventListener('click', () => {
-        if (audioContext.state === 'suspended') audioContext.resume();
         isTalking = !isTalking;
         localStream.getAudioTracks()[0].enabled = isTalking;
         talkBtn.innerText = isTalking ? "TALKING" : "PUSH";
@@ -148,28 +138,24 @@
     });
 
     function createPeerConnection(ip) {
-      // iceServers를 비워 외부 STUN 서버 의존성을 제거하고 로컬 연결 속도를 높임
       const pc = new RTCPeerConnection({ iceServers: [] }); 
-      
       if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-      
       pc.onicecandidate = e => { if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip); };
       pc.oniceconnectionstatechange = () => updatePeerStatus();
-      
       pc.ontrack = e => {
         const audioId = `audio-${ip.replace(/\./g, '-')}`;
         let audioEl = document.getElementById(audioId);
         if (!audioEl) {
-          audioEl = document.createElement('audio'); audioEl.id = audioId;
-          audioEl.autoplay = true; 
-          audioEl.volume = volSlider.value;
+          audioEl = document.createElement('audio');
+          audioEl.id = audioId;
+          audioEl.autoplay = true;
           audioContainer.appendChild(audioEl);
-          
           volSlider.addEventListener('input', () => {
-            document.querySelectorAll('audio').forEach(el => el.volume = volSlider.value);
+            audioEl.volume = volSlider.value;
           });
         }
         audioEl.srcObject = e.streams[0];
+        audioEl.volume = volSlider.value;
       };
       return pc;
     }

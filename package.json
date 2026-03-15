@@ -18,15 +18,10 @@
     "mac": {
       "category": "public.app-category.communication",
       "icon": "build/icon.icns",
-      "target": [
-        "dmg"
-      ]
+      "target": ["dmg"]
     },
     "win": {
-      "target": [
-        "portable",
-        "nsis"
-      ],
+      "target": ["portable", "nsis"],
       "icon": "build/icon.ico"
     },
     "directories": {

@@ -73,6 +73,7 @@
 
       try {
         const data = JSON.parse(msg.toString());
+		console.log("신호 받음:", data.type, "from", rinfo.address); // <- 이 줄을 추가!
         
         if (!peers[rinfo.address]) {
           peers[rinfo.address] = createPeerConnection(rinfo.address);

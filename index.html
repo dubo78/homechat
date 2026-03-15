@@ -16,7 +16,7 @@
   <audio id="remoteAudio" autoplay></audio>
 
   <script>
-    console.log("1. 앱 스크립 실행 시작");
+    console.log("1. 앱 스크립트 실행 시작");
     
     const dgram = require('dgram');
     const os = require('os');
@@ -24,7 +24,6 @@
     const PORT = 50000;
     const udp = dgram.createSocket('udp4');
     
-    // 1. 진짜 네트워크 인터페이스와 정확한 브로드캐스트 주소 계산
     const myIps = [];
     const broadcastIps = [];
     
@@ -33,7 +32,6 @@
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
           myIps.push(iface.address);
-          // 서브넷 마스크를 이용한 브로드캐스트 주소 계산
           const ipParts = iface.address.split('.');
           const maskParts = iface.netmask.split('.');
           const bcastParts = [];
@@ -86,7 +84,6 @@
         udp.setBroadcast(true);
         
         setInterval(() => {
-          console.log("6. 탐색 신호(hello) 전송 시도 ->", uniqueBroadcasts);
           uniqueBroadcasts.forEach(bcastIp => {
             sendUdp({ type: 'hello' }, bcastIp);
           });
@@ -110,7 +107,6 @@
 
       try {
         const data = JSON.parse(msg.toString());
-        console.log(">> 신호 받음:", data.type, "from", rinfo.address);
         
         if (!peers[rinfo.address]) {
           peers[rinfo.address] = createPeerConnection(rinfo.address);
@@ -131,7 +127,7 @@
         } else if (data.type === 'ice') {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
-      } catch (e) { console.error("메시지 처리 에러:", e); }
+      } catch (e) {}
     });
 
     function createPeerConnection(ip) {
@@ -146,9 +142,19 @@
         if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip);
       };
 
+      pc.oniceconnectionstatechange = () => {
+        console.log("P2P 실제 연결 상태:", pc.iceConnectionState);
+      };
+
       pc.ontrack = e => {
         console.log("상대방 오디오 트랙 수신됨");
-        if (!remoteAudio.srcObject) remoteAudio.srcObject = e.streams[0];
+        if (!remoteAudio.srcObject) {
+          remoteAudio.srcObject = e.streams[0];
+        }
+        
+        remoteAudio.play()
+          .then(() => console.log("오디오 출력 정상 작동"))
+          .catch(err => console.error("오디오 출력 차단됨:", err));
       };
       
       return pc;

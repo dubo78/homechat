@@ -44,8 +44,6 @@
     }
     
     const uniqueBroadcasts = [...new Set(broadcastIps)];
-    console.log("내 IP 목록:", myIps);
-    console.log("계산된 브로드캐스트 주소:", uniqueBroadcasts);
     
     let localStream;
     let isTalking = false;
@@ -55,11 +53,9 @@
     const statusDiv = document.getElementById('status');
     const remoteAudio = document.getElementById('remoteAudio');
 
-    console.log("2. 마이크 권한 요청 중...");
     navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true }
     }).then(stream => {
-      console.log("3. 마이크 권한 획득 성공");
       localStream = stream;
       localStream.getAudioTracks()[0].enabled = false;
 
@@ -78,9 +74,7 @@
         }
       });
 
-      console.log("4. UDP 포트 바인딩 시도...");
       udp.bind(PORT, '0.0.0.0', () => {
-        console.log("5. UDP 바인딩 성공, 브로드캐스트 설정 중...");
         udp.setBroadcast(true);
         
         setInterval(() => {
@@ -94,12 +88,8 @@
     function sendUdp(msg, ip) {
       try {
         const data = Buffer.from(JSON.stringify(msg));
-        udp.send(data, 0, data.length, PORT, ip, (err) => {
-          if (err) console.error(`UDP 전송 에러 (${ip}):`, err);
-        });
-      } catch (e) {
-        console.error("전송 함수 내부 에러:", e);
-      }
+        udp.send(data, 0, data.length, PORT, ip);
+      } catch (e) {}
     }
 
     udp.on('message', async (msg, rinfo) => {
@@ -132,7 +122,11 @@
 
     function createPeerConnection(ip) {
       console.log("P2P 연결 생성 중:", ip);
-      const pc = new RTCPeerConnection({ iceServers: [] }); 
+      
+      // 핵심 수정: 구글 STUN 서버 추가
+      const pc = new RTCPeerConnection({ 
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
+      }); 
       
       if (localStream) {
         localStream.getTracks().forEach(track => pc.addTrack(track, localStream));

@@ -104,15 +104,21 @@
         const pc = peers[rinfo.address];
 
         if (data.type === 'hello') {
+          // 핵심 수정: 이미 연결되었거나 연결 중이면 3초마다 오는 hello 신호를 무시
+          if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'checking') return;
+          if (pc.signalingState !== 'stable') return;
+
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           sendUdp({ type: 'offer', sdp: offer }, rinfo.address);
         } else if (data.type === 'offer') {
+          if (pc.signalingState !== 'stable') return; // 중복 방지
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           sendUdp({ type: 'answer', sdp: answer }, rinfo.address);
         } else if (data.type === 'answer') {
+          if (pc.signalingState !== 'have-local-offer') return; // 중복 방지
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
         } else if (data.type === 'ice') {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -121,9 +127,6 @@
     });
 
     function createPeerConnection(ip) {
-      console.log("P2P 연결 생성 중:", ip);
-      
-      // 핵심 수정: 구글 STUN 서버 추가
       const pc = new RTCPeerConnection({ 
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
       }); 
@@ -146,9 +149,7 @@
           remoteAudio.srcObject = e.streams[0];
         }
         
-        remoteAudio.play()
-          .then(() => console.log("오디오 출력 정상 작동"))
-          .catch(err => console.error("오디오 출력 차단됨:", err));
+        remoteAudio.play().catch(err => {}); // 불필요한 에러 로그 생략
       };
       
       return pc;

@@ -16,16 +16,38 @@
   <audio id="remoteAudio" autoplay></audio>
 
   <script>
-    console.log("1. 앱 스크립트 실행 시작");
+    console.log("1. 앱 스크립 실행 시작");
     
     const dgram = require('dgram');
     const os = require('os');
     
     const PORT = 50000;
-    const MULTICAST_IP = '224.0.0.114'; // 멀티캐스트 주소 추가
     const udp = dgram.createSocket('udp4');
-    const myIps = Object.values(os.networkInterfaces()).flat().map(i => i.address);
+    
+    // 1. 진짜 네트워크 인터페이스와 정확한 브로드캐스트 주소 계산
+    const myIps = [];
+    const broadcastIps = [];
+    
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          myIps.push(iface.address);
+          // 서브넷 마스크를 이용한 브로드캐스트 주소 계산
+          const ipParts = iface.address.split('.');
+          const maskParts = iface.netmask.split('.');
+          const bcastParts = [];
+          for(let i=0; i<4; i++) {
+            bcastParts.push((parseInt(ipParts[i]) | (~parseInt(maskParts[i]) & 255)));
+          }
+          broadcastIps.push(bcastParts.join('.'));
+        }
+      }
+    }
+    
+    const uniqueBroadcasts = [...new Set(broadcastIps)];
     console.log("내 IP 목록:", myIps);
+    console.log("계산된 브로드캐스트 주소:", uniqueBroadcasts);
     
     let localStream;
     let isTalking = false;
@@ -60,14 +82,14 @@
 
       console.log("4. UDP 포트 바인딩 시도...");
       udp.bind(PORT, '0.0.0.0', () => {
-        console.log("5. UDP 바인딩 성공, 멀티캐스트 설정 중...");
+        console.log("5. UDP 바인딩 성공, 브로드캐스트 설정 중...");
         udp.setBroadcast(true);
-        udp.setMulticastTTL(128);
-        udp.addMembership(MULTICAST_IP); // 멀티캐스트 그룹 가입
         
         setInterval(() => {
-          console.log("6. 탐색 신호(hello) 전송 시도");
-          sendUdp({ type: 'hello' }, MULTICAST_IP); // 멀티캐스트 주소로 전송
+          console.log("6. 탐색 신호(hello) 전송 시도 ->", uniqueBroadcasts);
+          uniqueBroadcasts.forEach(bcastIp => {
+            sendUdp({ type: 'hello' }, bcastIp);
+          });
         }, 3000);
       });
     }).catch(err => console.error("마이크 접근 오류:", err));
@@ -76,7 +98,7 @@
       try {
         const data = Buffer.from(JSON.stringify(msg));
         udp.send(data, 0, data.length, PORT, ip, (err) => {
-          if (err) console.error("UDP 전송 에러:", err);
+          if (err) console.error(`UDP 전송 에러 (${ip}):`, err);
         });
       } catch (e) {
         console.error("전송 함수 내부 에러:", e);

@@ -16,12 +16,15 @@
   <audio id="remoteAudio" autoplay></audio>
 
   <script>
+    console.log("1. 앱 스크립트 실행 시작");
+    
     const dgram = require('dgram');
     const os = require('os');
     
     const PORT = 50000;
     const udp = dgram.createSocket('udp4');
     const myIps = Object.values(os.networkInterfaces()).flat().map(i => i.address);
+    console.log("내 IP 목록:", myIps);
     
     let localStream;
     let isTalking = false;
@@ -31,9 +34,11 @@
     const statusDiv = document.getElementById('status');
     const remoteAudio = document.getElementById('remoteAudio');
 
+    console.log("2. 마이크 권한 요청 중...");
     navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true }
     }).then(stream => {
+      console.log("3. 마이크 권한 획득 성공");
       localStream = stream;
       localStream.getAudioTracks()[0].enabled = false;
 
@@ -52,19 +57,27 @@
         }
       });
 
-      // 0.0.0.0으로 모든 IP 수신 허용
+      console.log("4. UDP 포트 바인딩 시도...");
       udp.bind(PORT, '0.0.0.0', () => {
+        console.log("5. UDP 바인딩 성공, 브로드캐스트 설정 중...");
         udp.setBroadcast(true);
-        // 3초마다 계속 탐색 신호 보내기
+        
         setInterval(() => {
+          console.log("6. 탐색 신호(hello) 전송 시도");
           sendUdp({ type: 'hello' }, '255.255.255.255');
         }, 3000);
       });
     }).catch(err => console.error("마이크 접근 오류:", err));
 
     function sendUdp(msg, ip) {
-      const data = Buffer.from(JSON.stringify(msg));
-      udp.send(data, 0, data.length, PORT, ip);
+      try {
+        const data = Buffer.from(JSON.stringify(msg));
+        udp.send(data, 0, data.length, PORT, ip, (err) => {
+          if (err) console.error("UDP 전송 에러:", err);
+        });
+      } catch (e) {
+        console.error("전송 함수 내부 에러:", e);
+      }
     }
 
     udp.on('message', async (msg, rinfo) => {
@@ -72,8 +85,7 @@
 
       try {
         const data = JSON.parse(msg.toString());
-        // 통신 로그 확인
-        console.log("신호 받음:", data.type, "from", rinfo.address);
+        console.log(">> 신호 받음:", data.type, "from", rinfo.address);
         
         if (!peers[rinfo.address]) {
           peers[rinfo.address] = createPeerConnection(rinfo.address);
@@ -94,10 +106,11 @@
         } else if (data.type === 'ice') {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("메시지 처리 에러:", e); }
     });
 
     function createPeerConnection(ip) {
+      console.log("P2P 연결 생성 중:", ip);
       const pc = new RTCPeerConnection({ iceServers: [] }); 
       
       if (localStream) {
@@ -109,6 +122,7 @@
       };
 
       pc.ontrack = e => {
+        console.log("상대방 오디오 트랙 수신됨");
         if (!remoteAudio.srcObject) remoteAudio.srcObject = e.streams[0];
       };
       

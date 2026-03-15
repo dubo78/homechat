@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>HomeChat</title>
+  <style>
+    body { text-align: center; padding: 40px; font-family: sans-serif; }
+    #status { font-weight: bold; color: red; margin: 20px; font-size: 18px; }
+    button { padding: 15px 30px; font-size: 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>HomeChat</h2>
+  <button id="talkBtn">말하기 켜기</button>
+  <div id="status">상태: 대기 중 (마이크 꺼짐)</div>
+  <audio id="remoteAudio" autoplay></audio>
+
+  <script>
+    const dgram = require('dgram');
+    const os = require('os');
+    
+    const PORT = 50000;
+    const udp = dgram.createSocket('udp4');
+    // 내 로컬 IP 목록 (자신이 보낸 신호 무시용)
+    const myIps = Object.values(os.networkInterfaces()).flat().map(i => i.address);
+    
+    let localStream;
+    let isTalking = false;
+    const peers = {};
+
+    const talkBtn = document.getElementById('talkBtn');
+    const statusDiv = document.getElementById('status');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    // 1. 마이크 제어 및 토글 상태창 구현
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true } // 하울링 방지 켬
+    }).then(stream => {
+      localStream = stream;
+      localStream.getAudioTracks()[0].enabled = false; // 처음엔 마이크 끄기
+
+      talkBtn.addEventListener('click', () => {
+        isTalking = !isTalking;
+        localStream.getAudioTracks()[0].enabled = isTalking; // 여기서 마이크 ON/OFF 제어
+
+        if (isTalking) {
+          talkBtn.innerText = "말하기 끄기";
+          statusDiv.style.color = "green";
+          statusDiv.innerText = "상태: 송신 중 (마이크 켜짐)";
+        } else {
+          talkBtn.innerText = "말하기 켜기";
+          statusDiv.style.color = "red";
+          statusDiv.innerText = "상태: 대기 중 (마이크 꺼짐)";
+        }
+      });
+
+      // 2. 마이크 준비 후 LAN 자동 탐색 및 연결 시작
+      udp.bind(PORT, () => {
+        udp.setBroadcast(true);
+        sendUdp({ type: 'hello' }, '255.255.255.255'); // 네트워크 전체에 접속 알림
+      });
+    });
+
+    // UDP 메시지 전송 함수
+    function sendUdp(msg, ip) {
+      const data = Buffer.from(JSON.stringify(msg));
+      udp.send(data, 0, data.length, PORT, ip);
+    }
+
+    // 서버 없이 P2P 신호 교환 (WebRTC Signaling)
+    udp.on('message', async (msg, rinfo) => {
+      if (myIps.includes(rinfo.address)) return; // 내가 보낸 건 무시
+
+      try {
+        const data = JSON.parse(msg.toString());
+        
+        if (!peers[rinfo.address]) {
+          peers[rinfo.address] = createPeerConnection(rinfo.address);
+        }
+        const pc = peers[rinfo.address];
+
+        if (data.type === 'hello') {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendUdp({ type: 'offer', sdp: offer }, rinfo.address);
+        } else if (data.type === 'offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendUdp({ type: 'answer', sdp: answer }, rinfo.address);
+        } else if (data.type === 'answer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        } else if (data.type === 'ice') {
+          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+      } catch (e) { console.error(e); }
+    });
+
+    // P2P 오디오 연결 생성
+    function createPeerConnection(ip) {
+      const pc = new RTCPeerConnection({ iceServers: [] }); 
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      }
+
+      pc.onicecandidate = e => {
+        if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip);
+      };
+
+      pc.ontrack = e => {
+        // 상대방 소리가 들어오면 스피커로 출력
+        if (!remoteAudio.srcObject) remoteAudio.srcObject = e.streams[0];
+      };
+      
+      return pc;
+    }
+  </script>
+</body>
+</html>

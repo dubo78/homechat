@@ -1,0 +1,18 @@
+# Node dependencies
+node_modules/
+npm-debug.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Build outputs
+dist/
+out/

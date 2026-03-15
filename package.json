@@ -18,10 +18,20 @@
     "mac": {
       "category": "public.app-category.communication",
       "icon": "build/icon.icns",
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ],
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone for walkie-talkie communication."
+      }
     },
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "build/icon.ico"
     },
     "directories": {

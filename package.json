@@ -1,8 +1,36 @@
 {
   "name": "homechat",
   "version": "1.0.0",
+  "description": "LAN P2P Walkie-Talkie",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "dubo",
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.dubo.homechat",
+    "productName": "HomeChat",
+    "mac": {
+      "category": "public.app-category.communication",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "directories": {
+      "output": "dist"
+    }
   }
 }

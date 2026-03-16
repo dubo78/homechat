@@ -43,8 +43,8 @@
     <div id="userCount">CONNECTED DEVICES: 0</div>
     <button id="talkBtn">PUSH</button>
     <div class="vol-control">
-      <label>RECEIVE VOLUME</label>
-      <input type="range" id="volSlider" min="0" max="1" step="0.05" value="1">
+      <label>RECEIVE VOLUME (Max 300%)</label>
+      <input type="range" id="volSlider" min="0" max="3" step="0.1" value="1.5">
     </div>
     <div id="status" class="status-offline">SCANNING...</div>
     <div class="hint">LAN P2P WALKIE-TALKIE</div>
@@ -69,27 +69,41 @@
     }
     const uniqueBroadcasts = [...new Set(broadcastIps)];
     
-    let localStream; let isTalking = false; const peers = {};
+    let localStream; 
+    let amplifiedStream; // 증폭된 스트림 저장용
+    let isTalking = false; 
+    const peers = {};
+    
     const talkBtn = document.getElementById('talkBtn');
     const statusDiv = document.getElementById('status');
     const userCountDiv = document.getElementById('userCount');
     const volSlider = document.getElementById('volSlider');
     const audioContainer = document.getElementById('audioContainer');
 
-    // 마이크 옵션을 강화하여 기본 감도를 높임
+    // 마이크 스트림을 가져와서 증폭
     navigator.mediaDevices.getUserMedia({ 
-      audio: { 
-        echoCancellation: true, 
-        noiseSuppression: true, 
-        autoGainControl: true // 브라우저가 자동으로 마이크 소리를 키우도록 설정
-      } 
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
     }).then(stream => {
       localStream = stream;
-      localStream.getAudioTracks()[0].enabled = false;
+      
+      // 오디오 증폭 로직 (Web Audio API)
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const gainNode = audioCtx.createGain();
+      
+      gainNode.gain.value = 5.0; // [강력 증폭] 마이크 소리를 5배로 키움
+      
+      const destination = audioCtx.createMediaStreamDestination();
+      source.connect(gainNode);
+      gainNode.connect(destination);
+      
+      amplifiedStream = destination.stream;
+      amplifiedStream.getAudioTracks()[0].enabled = false;
 
       talkBtn.addEventListener('click', () => {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         isTalking = !isTalking;
-        localStream.getAudioTracks()[0].enabled = isTalking;
+        amplifiedStream.getAudioTracks()[0].enabled = isTalking;
         talkBtn.innerText = isTalking ? "TALKING" : "PUSH";
         talkBtn.classList.toggle('active', isTalking);
       });
@@ -139,7 +153,10 @@
 
     function createPeerConnection(ip) {
       const pc = new RTCPeerConnection({ iceServers: [] }); 
-      if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      // 증폭된 스트림을 상대방에게 전송
+      if (amplifiedStream) {
+        amplifiedStream.getTracks().forEach(track => pc.addTrack(track, amplifiedStream));
+      }
       pc.onicecandidate = e => { if (e.candidate) sendUdp({ type: 'ice', candidate: e.candidate }, ip); };
       pc.oniceconnectionstatechange = () => updatePeerStatus();
       pc.ontrack = e => {
@@ -151,11 +168,11 @@
           audioEl.autoplay = true;
           audioContainer.appendChild(audioEl);
           volSlider.addEventListener('input', () => {
-            audioEl.volume = volSlider.value;
+            audioEl.volume = Math.min(volSlider.value, 1.0); // 브라우저 제한상 1.0 이상은 수신측 증폭이 어려우므로 1.0 유지
           });
         }
         audioEl.srcObject = e.streams[0];
-        audioEl.volume = volSlider.value;
+        audioEl.volume = Math.min(volSlider.value, 1.0);
       };
       return pc;
     }

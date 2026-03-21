@@ -16,3 +16,6 @@ $RECYCLE.BIN/
 # Build outputs
 dist/
 out/
+
+# etc
+gitgist.txt
